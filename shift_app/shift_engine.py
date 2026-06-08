@@ -277,7 +277,9 @@ def generate_shift(config: dict):
     shoteikoji = SHOTEIKOJI.get(year, {}).get(month)
     targets = {}
     for n in PERSONS:
-        if n in ("A", "E", "F", "G", "K"):
+        if n == "A":
+            targets[n] = round(shoteikoji * 0.8, 2) if shoteikoji else round(sum(v[2] for v in shift_data[n].values()), 2)
+        elif n in ("E", "F", "G", "K"):
             targets[n] = round(sum(v[2] for v in shift_data[n].values()), 2)
         else:
             targets[n] = shoteikoji

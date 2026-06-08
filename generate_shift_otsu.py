@@ -361,8 +361,8 @@ for d in range(1, DAYS_IN_MONTH+1):
 
     # K: 空欄（手動記入）
 
-# パートスタッフの目標時間を実シフトから自動計算
-for n in ("A","E","F","G"):
+# E/F/G/K: 実シフト時間から自動計算
+for n in ("E","F","G"):
     TARGETS[n] = round(sum(v[2] for v in shift_data[n].values()), 2)
 
 # ================================================================
@@ -374,6 +374,10 @@ SHOTEIKOJI = {
 }
 
 _shoteikoji = SHOTEIKOJI.get(YEAR, {}).get(MONTH)
+
+# A: 所定労働時間 × 0.8
+TARGETS["A"] = round(_shoteikoji * 0.8, 2) if _shoteikoji else round(sum(v[2] for v in shift_data["A"].values()), 2)
+
 for n in ("B","C","D","H","I","J"):
     if TARGETS[n] is None:
         TARGETS[n] = _shoteikoji  # None の場合は年間テーブル未登録
