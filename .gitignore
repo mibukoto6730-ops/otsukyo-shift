@@ -1,0 +1,18 @@
+# Excel出力（個人情報を含むため除外）
+*.xlsx
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# 環境
+.env
+*.egg-info/
