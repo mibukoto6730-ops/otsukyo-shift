@@ -2,13 +2,13 @@
 ダブルクリックで起動（コンソールなし）
 """
 import subprocess
+import sys
 import webbrowser
 import time
 import os
 import socket
 
-APP_DIR   = os.path.dirname(os.path.abspath(__file__))
-STREAMLIT = r"C:\Users\mibuk\AppData\Local\Programs\Python\Python312\Scripts\streamlit.exe"
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def find_free_port(start=8502):
     for p in range(start, start + 20):
@@ -20,7 +20,7 @@ def find_free_port(start=8502):
 port = find_free_port()
 
 proc = subprocess.Popen(
-    [STREAMLIT, "run", "app.py",
+    [sys.executable, "-m", "streamlit", "run", "app.py",
      "--server.port", str(port),
      "--server.headless", "true",
      "--browser.gatherUsageStats", "false"],
