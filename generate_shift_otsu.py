@@ -353,7 +353,7 @@ for d in range(1, DAYS_IN_MONTH+1):
         if sh:
             if jm_assign.get(d) == "J":
                 shift_data["J"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
-        elif wd == 0: shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
+        elif wd == 0: shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 1: shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 3: shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 4: shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
