@@ -32,7 +32,7 @@ with st.sidebar:
         return f"{d}日（{WD[datetime.date(year, month, d).weekday()]}）"
 
     all_days  = list(range(1, days_in_month + 1))
-    open_days = [d for d in all_days if datetime.date(year, month, d).weekday() != 6]
+    open_days = all_days  # 日曜も営業
 
     st.subheader("臨時休業")
     hol_input = st.multiselect("臨時休業日", options=open_days, format_func=label)
