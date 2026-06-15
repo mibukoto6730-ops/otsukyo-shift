@@ -119,6 +119,16 @@ with tab3:
         d_sat = set(st.multiselect("D（安井）土曜", options=sat_days_list, format_func=label, key="dsat"))
 
 # ============================================================
+# その他メモ
+# ============================================================
+st.subheader("📝 その他（シフト上書き）", anchor=False)
+memo = st.text_area(
+    "特定の日のシフトを変更したい場合に記入（1行1件）",
+    placeholder="形式: スタッフ 日 開始-終了\n例）A 8 9:00-18:00\n例）J 15 10:00-19:00",
+    height=110,
+)
+
+# ============================================================
 # 生成ボタン
 # ============================================================
 st.divider()
@@ -138,6 +148,7 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
         "j_extra_off": extra_off_config["J"],
         "requested_off":    requested_off,
         "yukyu_per_person": yukyu_per_person,
+        "memo":             memo,
     }
 
     with st.spinner("シフトを計算中..."):
@@ -199,6 +210,15 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
         for msg in sun: st.error(msg)
     else:
         st.success("✅ 薬剤師カバレッジ・日祝配置：全日程クリア")
+
+    # メモ適用結果
+    if verif.get("memo_parsed"):
+        with st.expander("📝 その他（適用内容）", expanded=True):
+            for line in verif["memo_parsed"]:
+                if line.startswith("解析") or line.startswith("無効"):
+                    st.warning(line)
+                else:
+                    st.success(f"✅ {line}")
 
     # ダウンロード
     st.divider()

@@ -288,17 +288,64 @@ def generate_shift(config: dict):
     if shoteikoji:
         _adjust_hours(shift_data, shoteikoji)
 
+    # ---- その他メモによる上書き ----
+    memo = config.get("memo", "")
+    memo_overrides, memo_parsed = parse_memo(memo, year, month)
+    for name, day_map in memo_overrides.items():
+        for day, shift in day_map.items():
+            shift_data[name][day] = shift
+
     verif = _verify(shift_data, targets, yukyu_per_person, requested_off,
                     days_in_month, year, month, hols, is_sun_hol,
                     ph_assign, jm_assign, sun_hol_days)
     verif["ph_assign"]     = ph_assign
     verif["jm_assign"]     = jm_assign
     verif["sun_hol_days"]  = sun_hol_days
+    verif["memo_parsed"]   = memo_parsed
 
     excel = _build_excel(shift_data, targets, requested_off, yukyu_per_person,
                          year, month, days_in_month, hols, is_sun_hol)
 
     return shift_data, excel, verif
+
+
+def parse_memo(memo: str, year: int, month: int) -> tuple[dict, list]:
+    """
+    その他メモを解析してシフト上書き辞書を返す。
+    形式（1行1件）: <スタッフ> <日> <開始>-<終了>
+    例) A 8 9:00-18:00 / J 15 10:00-19:00
+    """
+    import re
+    overrides: dict = {}
+    parsed:    list = []
+
+    for raw in memo.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = re.fullmatch(
+            r"([A-Ka-k])\s+(\d{1,2})\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})",
+            line,
+        )
+        if not m:
+            parsed.append(f"解析できない行: 「{line}」（形式: A 8 9:00-18:00）")
+            continue
+        name = m.group(1).upper()
+        day  = int(m.group(2))
+        st   = m.group(3)
+        en   = m.group(4)
+        try:
+            days_in_month = calendar.monthrange(year, month)[1]
+            assert 1 <= day <= days_in_month
+            nh = net_hours(st, en)
+            assert nh > 0
+        except Exception:
+            parsed.append(f"無効な値: 「{line}」")
+            continue
+        overrides.setdefault(name, {})[day] = (st, en, nh, True)
+        parsed.append(f"{name} {day}日 {st}〜{en}（実働{nh:.2f}h）")
+
+    return overrides, parsed
 
 
 def _adjust_hours(shift_data, shoteikoji_val):
