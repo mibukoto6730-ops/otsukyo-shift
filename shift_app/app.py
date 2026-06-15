@@ -34,7 +34,6 @@ with st.sidebar:
     all_days  = list(range(1, days_in_month + 1))
     open_days = all_days  # 日曜も営業
 
-    st.subheader("臨時休業", anchor=False)
     hol_input = st.multiselect("臨時休業日", options=open_days, format_func=label)
     holidays  = set(hol_input)
 
