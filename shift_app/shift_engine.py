@@ -246,7 +246,7 @@ def generate_shift(config: dict):
             elif wd == 3: shift_data["H"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
             elif wd == 4: shift_data["H"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
             elif wd == 5 and not sat_has_wed(d, h_wed):
-                shift_data["H"][d] = ("9:00", "17:00", net_hours("9:00", "17:00"), False)
+                shift_data["H"][d] = ("8:45", "17:00", net_hours("8:45", "17:00"), False)
 
         # I: 月早・火遅・第3,4水 8:45-17・木早・金遅
         if not skip("I", d) and d not in extra_off["I"]:
@@ -260,7 +260,7 @@ def generate_shift(config: dict):
             elif wd == 3: shift_data["I"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
             elif wd == 4: shift_data["I"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
             elif wd == 5 and not sat_has_wed(d, i_wed):
-                shift_data["I"][d] = ("9:00", "17:00", net_hours("9:00", "17:00"), False)
+                shift_data["I"][d] = ("8:45", "17:00", net_hours("8:45", "17:00"), False)
 
         # J: 月早・火遅・木遅・金早・土 9-17、水固定休
         if not skip("J", d) and wd != 2 and d not in extra_off["J"]:
@@ -271,7 +271,7 @@ def generate_shift(config: dict):
             elif wd == 1: shift_data["J"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
             elif wd == 3: shift_data["J"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
             elif wd == 4: shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
-            elif wd == 5: shift_data["J"][d] = ("9:00",  "17:00", net_hours("9:00",  "17:00"), False)
+            elif wd == 5: shift_data["J"][d] = ("8:45",  "17:00", net_hours("8:45",  "17:00"), False)
 
     # ---- 目標時間 ----
     shoteikoji = SHOTEIKOJI.get(year, {}).get(month)
@@ -286,7 +286,7 @@ def generate_shift(config: dict):
 
     # ---- 時間調整（所定労働時間に近づける）----
     if shoteikoji:
-        _adjust_hours(shift_data, shoteikoji)
+        _adjust_hours(shift_data, shoteikoji, year, month, days_in_month, hols, h_wed, i_wed, extra_off)
 
     # ---- その他メモによる上書き ----
     memo = config.get("memo", "")
@@ -350,45 +350,119 @@ def parse_memo(memo: str, year: int, month: int) -> tuple[dict, list]:
     return overrides, parsed
 
 
-def _adjust_hours(shift_data, shoteikoji_val):
+def _adjust_hours(shift_data, shoteikoji_val, year, month, days_in_month, hols, h_wed, i_wed, extra_off):
     """正社員（B/C/D/H/I/J）の月間労働時間を所定労働時間に近づける。
-    過剰 → 終了時間を -1h（月内均等に分散）、黄色セルで表示。
-    不足 → 終了時間を +1h（月内均等に分散）、黄色セルで表示。"""
-    SHORTEN_END = {"19:00": "18:00", "18:00": "17:00"}
-    EXTEND_END  = {"17:00": "18:00", "18:00": "19:00"}
+    過剰 → 金土シフトを削除（薬剤師カバレッジ ≥2 を維持）
+    不足 → 未出勤の金土日にシフトを追加"""
+
+    def _is_sun_hol(d):
+        return datetime.date(year, month, d).weekday() == 6 or d in hols
+
+    def _sat_has_wed(sat_d, wed_set):
+        wed_day = sat_d - 3
+        return 1 <= wed_day <= days_in_month and wed_day in wed_set
 
     for person in ("B", "C", "D", "H", "I", "J"):
-        if not shift_data[person]:
+        data = shift_data[person]
+        if not data:
             continue
-        total = sum(v[2] for v in shift_data[person].values())
-        diff  = total - shoteikoji_val  # >0=過剰, <0=不足
+        total = sum(v[2] for v in data.values())
+        diff = total - shoteikoji_val  # >0=過剰, <0=不足
 
         if abs(diff) < 0.5:
             continue
 
-        days = sorted(shift_data[person].keys())
         over = diff > 0
 
-        if over:
-            cands = [d for d in days if shift_data[person][d][1] in SHORTEN_END]
-        else:
-            # 8:45-18:00 を 8:45-19:00 にするのは長すぎるため除外
-            cands = [d for d in days
-                     if shift_data[person][d][1] in EXTEND_END
-                     and not (shift_data[person][d][0] == "8:45"
-                              and shift_data[person][d][1] == "18:00")]
+        if person in ("B", "C", "D"):
+            if over:
+                # 土(7h)→金(8h) の順で削除（カバレッジ ≥2 を維持）
+                for wd_target in (5, 4):
+                    removable = sorted(
+                        [d for d in list(data)
+                         if datetime.date(year, month, d).weekday() == wd_target
+                         and not _is_sun_hol(d)],
+                        reverse=True,
+                    )
+                    for d in removable:
+                        others = [p for p in ("B", "C", "D") if p != person and d in shift_data[p]]
+                        if len(others) < 2:
+                            continue
+                        saved = data[d][2]
+                        del shift_data[person][d]
+                        diff -= saved
+                        if diff <= 0.5:
+                            break
+                    if diff <= 0.5:
+                        break
+            else:
+                # 土(7h)→金(8h) の順で未出勤日に追加
+                for wd_target, s, e in ((5, "9:00", "17:00"), (4, "10:00", "19:00")):
+                    for d in range(1, days_in_month + 1):
+                        if datetime.date(year, month, d).weekday() != wd_target:
+                            continue
+                        if _is_sun_hol(d):
+                            continue
+                        if d in shift_data[person]:
+                            continue
+                        if d in extra_off.get(person, set()):
+                            continue
+                        nh = net_hours(s, e)
+                        shift_data[person][d] = (s, e, nh, False)
+                        diff += nh
+                        if diff >= -0.5:
+                            break
+                    if diff >= -0.5:
+                        break
 
-        n = min(round(abs(diff)), len(cands))
-        if n == 0:
-            continue
+        elif person in ("H", "I"):
+            wed_set = h_wed if person == "H" else i_wed
+            if over:
+                sat_days = sorted(
+                    [d for d in list(data)
+                     if datetime.date(year, month, d).weekday() == 5
+                     and not _is_sun_hol(d)],
+                    reverse=True,
+                )
+                for d in sat_days:
+                    saved = data[d][2]
+                    del shift_data[person][d]
+                    diff -= saved
+                    if diff <= 0.5:
+                        break
+            else:
+                # 通常未出勤の土曜（wed_setの週）に追加
+                for d in range(1, days_in_month + 1):
+                    if datetime.date(year, month, d).weekday() != 5:
+                        continue
+                    if _is_sun_hol(d):
+                        continue
+                    if d in shift_data[person]:
+                        continue
+                    if d in extra_off.get(person, set()):
+                        continue
+                    if _sat_has_wed(d, wed_set):
+                        nh = net_hours("8:45", "17:00")
+                        shift_data[person][d] = ("8:45", "17:00", nh, False)
+                        diff += nh
+                        if diff >= -0.5:
+                            break
 
-        step   = len(cands) / n
-        chosen = [cands[int(i * step)] for i in range(n)]
-
-        for d in chosen:
-            st, en, _, _ = shift_data[person][d]
-            new_en = SHORTEN_END[en] if over else EXTEND_END[en]
-            shift_data[person][d] = (st, new_en, net_hours(st, new_en), True)
+        else:  # J
+            if over:
+                sat_days = sorted(
+                    [d for d in list(data)
+                     if datetime.date(year, month, d).weekday() == 5
+                     and not _is_sun_hol(d)],
+                    reverse=True,
+                )
+                for d in sat_days:
+                    saved = data[d][2]
+                    del shift_data[person][d]
+                    diff -= saved
+                    if diff <= 0.5:
+                        break
+            # J 不足の場合: 追加する余地が少ないため残差を受け入れる
 
 
 def _verify(shift_data, targets, yukyu, r_off, days_in_month, year, month,

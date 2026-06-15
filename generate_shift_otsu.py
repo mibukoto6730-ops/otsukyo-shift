@@ -111,6 +111,12 @@ NAMES = {
 }
 PERSONS = list("ABCDEFGHIJK")
 
+# 会社指定 正社員 所定労働時間（年間固定）
+SHOTEIKOJI = {
+    2026: {1:151, 2:143, 3:169, 4:163, 5:153,
+           6:171, 7:169, 8:169, 9:147, 10:169, 11:155, 12:165},
+}
+
 # ================================================================
 # ヘルパー
 # ================================================================
@@ -326,13 +332,13 @@ for d in range(1, DAYS_IN_MONTH+1):
             if jm_assign.get(d) == "H":
                 shift_data["H"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
         elif d in h_wed:
-            shift_data["H"][d] = ("8:45","17:00", net_hours("8:45","17:00"), False)
+            shift_data["H"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
         elif wd == 0: shift_data["H"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 1: shift_data["H"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 3: shift_data["H"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 4: shift_data["H"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 5 and not sat_has_wed(d, h_wed):
-            shift_data["H"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
+            shift_data["H"][d] = ("8:45","17:00", net_hours("8:45","17:00"), False)
 
     # --- I: 月=早, 火=遅, 第3,4水=9-17, 木=遅, 金=早, 土=条件付き ---
     if not skip("I",d) and d not in i_extra_off:
@@ -340,13 +346,13 @@ for d in range(1, DAYS_IN_MONTH+1):
             if jm_assign.get(d) == "I":
                 shift_data["I"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
         elif d in i_wed:
-            shift_data["I"][d] = ("8:45","17:00", net_hours("8:45","17:00"), False)
+            shift_data["I"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
         elif wd == 0: shift_data["I"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 1: shift_data["I"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 3: shift_data["I"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 4: shift_data["I"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 5 and not sat_has_wed(d, i_wed):
-            shift_data["I"][d] = ("9:00","17:00", net_hours("9:00","17:00"), False)
+            shift_data["I"][d] = ("8:45","17:00", net_hours("8:45","17:00"), False)
 
     # --- J: 月=早, 火=遅, 木=早, 金=遅, 土=9-17, 水・日=休 ---
     if not skip("J",d) and wd != 2 and d not in j_extra_off:
@@ -357,21 +363,13 @@ for d in range(1, DAYS_IN_MONTH+1):
         elif wd == 1: shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 3: shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
         elif wd == 4: shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
-        elif wd == 5: shift_data["J"][d] = ("9:00","17:00",  net_hours("9:00","17:00"),  False)
+        elif wd == 5: shift_data["J"][d] = ("8:45","17:00",  net_hours("8:45","17:00"),  False)
 
     # K: 空欄（手動記入）
 
 # E/F/G/K: 実シフト時間から自動計算
 for n in ("E","F","G"):
     TARGETS[n] = round(sum(v[2] for v in shift_data[n].values()), 2)
-
-# ================================================================
-# 正社員の所定労働時間（会社指定・年間固定テーブル）
-# ================================================================
-SHOTEIKOJI = {
-    2026: {1:151, 2:143, 3:169, 4:163, 5:153,
-           6:171, 7:169, 8:169, 9:147, 10:169, 11:155, 12:165},
-}
 
 _shoteikoji = SHOTEIKOJI.get(YEAR, {}).get(MONTH)
 
@@ -386,33 +384,111 @@ for n in ("B","C","D","H","I","J"):
 # 時間調整（所定労働時間に近づける）
 # ================================================================
 def _adjust_hours(shift_data, shoteikoji_val):
-    SHORTEN_END = {"19:00": "18:00", "18:00": "17:00"}
-    EXTEND_END  = {"17:00": "18:00", "18:00": "19:00"}
+    """過剰 → 金土シフトを削除（薬剤師カバレッジ ≥2 を維持）
+    不足 → 未出勤の金土にシフトを追加"""
+
+    _extra = {"B": b_extra_off, "C": c_extra_off, "D": d_extra_off,
+              "H": h_extra_off, "I": i_extra_off, "J": j_extra_off}
+
+    def _is_sh(d):
+        return datetime.date(YEAR, MONTH, d).weekday() == 6 or d in HOLIDAYS
+
+    def _sat_hw(sat_d, wed_set):
+        wd = sat_d - 3
+        return 1 <= wd <= DAYS_IN_MONTH and wd in wed_set
+
     for person in ("B", "C", "D", "H", "I", "J"):
-        if not shift_data[person]:
+        data = shift_data[person]
+        if not data:
             continue
-        total = sum(v[2] for v in shift_data[person].values())
-        diff  = total - shoteikoji_val
+        total = sum(v[2] for v in data.values())
+        diff = total - shoteikoji_val
         if abs(diff) < 0.5:
             continue
-        days = sorted(shift_data[person].keys())
         over = diff > 0
-        if over:
-            cands = [d for d in days if shift_data[person][d][1] in SHORTEN_END]
-        else:
-            cands = [d for d in days
-                     if shift_data[person][d][1] in EXTEND_END
-                     and not (shift_data[person][d][0] == "8:45"
-                              and shift_data[person][d][1] == "18:00")]
-        n = min(round(abs(diff)), len(cands))
-        if n == 0:
-            continue
-        step   = len(cands) / n
-        chosen = [cands[int(i * step)] for i in range(n)]
-        for d in chosen:
-            st, en, _, _ = shift_data[person][d]
-            new_en = SHORTEN_END[en] if over else EXTEND_END[en]
-            shift_data[person][d] = (st, new_en, net_hours(st, new_en), True)
+
+        if person in ("B", "C", "D"):
+            if over:
+                for wd_t in (5, 4):
+                    removable = sorted(
+                        [d for d in list(data)
+                         if datetime.date(YEAR, MONTH, d).weekday() == wd_t and not _is_sh(d)],
+                        reverse=True,
+                    )
+                    for d in removable:
+                        others = [p for p in ("B", "C", "D") if p != person and d in shift_data[p]]
+                        if len(others) < 2:
+                            continue
+                        saved = data[d][2]
+                        del shift_data[person][d]
+                        diff -= saved
+                        if diff <= 0.5:
+                            break
+                    if diff <= 0.5:
+                        break
+            else:
+                for wd_t, s, e in ((5, "9:00", "17:00"), (4, "10:00", "19:00")):
+                    for d in range(1, DAYS_IN_MONTH + 1):
+                        if datetime.date(YEAR, MONTH, d).weekday() != wd_t:
+                            continue
+                        if _is_sh(d):
+                            continue
+                        if d in shift_data[person]:
+                            continue
+                        if d in _extra.get(person, set()):
+                            continue
+                        nh = net_hours(s, e)
+                        shift_data[person][d] = (s, e, nh, False)
+                        diff += nh
+                        if diff >= -0.5:
+                            break
+                    if diff >= -0.5:
+                        break
+
+        elif person in ("H", "I"):
+            wed_set = h_wed if person == "H" else i_wed
+            if over:
+                sat_days = sorted(
+                    [d for d in list(data)
+                     if datetime.date(YEAR, MONTH, d).weekday() == 5 and not _is_sh(d)],
+                    reverse=True,
+                )
+                for d in sat_days:
+                    saved = data[d][2]
+                    del shift_data[person][d]
+                    diff -= saved
+                    if diff <= 0.5:
+                        break
+            else:
+                for d in range(1, DAYS_IN_MONTH + 1):
+                    if datetime.date(YEAR, MONTH, d).weekday() != 5:
+                        continue
+                    if _is_sh(d):
+                        continue
+                    if d in shift_data[person]:
+                        continue
+                    if d in _extra.get(person, set()):
+                        continue
+                    if _sat_hw(d, wed_set):
+                        nh = net_hours("8:45", "17:00")
+                        shift_data[person][d] = ("8:45", "17:00", nh, False)
+                        diff += nh
+                        if diff >= -0.5:
+                            break
+
+        else:  # J
+            if over:
+                sat_days = sorted(
+                    [d for d in list(data)
+                     if datetime.date(YEAR, MONTH, d).weekday() == 5 and not _is_sh(d)],
+                    reverse=True,
+                )
+                for d in sat_days:
+                    saved = data[d][2]
+                    del shift_data[person][d]
+                    diff -= saved
+                    if diff <= 0.5:
+                        break
 
 if _shoteikoji:
     _adjust_hours(shift_data, _shoteikoji)
