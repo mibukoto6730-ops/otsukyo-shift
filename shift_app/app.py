@@ -186,8 +186,8 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
         cols_s[i].metric(
             f"{n}（{NAMES[n]}）",
             f"最大 {mx} 日",
-            delta="⚠ 要確認" if mx >= 6 else "OK",
-            delta_color="inverse" if mx >= 6 else "normal",
+            delta="⚠ 要確認" if mx >= 7 else "OK",
+            delta_color="inverse" if mx >= 7 else "normal",
         )
 
     # チェック結果
