@@ -550,9 +550,8 @@ def _build_excel(shift_data, targets, r_off, yukyu, year, month, days_in_month, 
                 c.border = bdr(l=Sn, r=Sn, t=ts, b=bs)
                 fl = dfill(d)
                 if d in data:
-                    st, en, _, adj = data[d]
-                    if adj: c.fill = yel_fill
-                    elif fl: c.fill = fl
+                    st, en, _, _ = data[d]
+                    if fl: c.fill = fl
                     if ro == 0:
                         c.value = to_time(st); c.number_format = "h:mm"
                     elif ro == 1:
