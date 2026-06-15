@@ -34,7 +34,7 @@ with st.sidebar:
     all_days  = list(range(1, days_in_month + 1))
     open_days = all_days  # 日曜も営業
 
-    st.subheader("臨時休業")
+    st.subheader("臨時休業", anchor=False)
     hol_input = st.multiselect("臨時休業日", options=open_days, format_func=label)
     holidays  = set(hol_input)
 
@@ -80,20 +80,20 @@ tab1, tab2, tab3 = st.tabs(["📌 希望休 / 有休", "🗓 追加休日（B〜
 with tab1:
     col_l, col_r = st.columns(2)
     with col_l:
-        st.subheader("希望休（×）")
+        st.subheader("希望休", anchor=False)
         for k in "ABCDEFGHIJK":
             days_sel = st.multiselect(
                 f"{k}（{NAMES[k]}）", options=open_days, format_func=label, key=f"off_{k}")
             requested_off[k] = set(days_sel)
     with col_r:
-        st.subheader("有休")
+        st.subheader("有休", anchor=False)
         for k in "ABCDEFGHIJK":
             days_sel = st.multiselect(
                 f"{k}（{NAMES[k]}）", options=open_days, format_func=label, key=f"yu_{k}")
             yukyu_per_person[k] = set(days_sel)
 
 with tab2:
-    st.subheader("追加休日")
+    st.subheader("追加休日", anchor=False)
     st.caption("日曜補償は自動追加されます。それ以外に休ませたい日を指定してください。")
     cols2 = st.columns(3)
     for i, k in enumerate("BCDHIJ"):
@@ -103,7 +103,7 @@ with tab2:
             extra_off_config[k] = set(days_sel)
 
 with tab3:
-    st.subheader("金曜出勤日指定")
+    st.subheader("金曜出勤日指定", anchor=False)
     st.caption("全て空欄の場合、所定労働時間に合わせて自動配置します。")
     fri_days = [d for d in open_days if datetime.date(year, month, d).weekday() == 4]
     sat_days_list = [d for d in open_days if datetime.date(year, month, d).weekday() == 5]
@@ -163,7 +163,7 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
             )
 
     # 労働時間（正社員のみ）
-    st.subheader("📊 労働時間（正社員）")
+    st.subheader("📊 労働時間（正社員）", anchor=False)
     main_staff = list("BCDHIJ")
     cols_h = st.columns(6)
     for i, n in enumerate(main_staff):
@@ -179,7 +179,7 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
         )
 
     # 連勤チェック
-    st.subheader("📅 連勤チェック")
+    st.subheader("📅 連勤チェック", anchor=False)
     cols_s = st.columns(6)
     for i, n in enumerate(main_staff):
         mx = verif["streaks"].get(n, 0)
@@ -194,7 +194,7 @@ if st.button("🚀　シフトを生成する", type="primary", use_container_wi
     cov = verif["coverage_issues"]
     sun = verif["sunhol_issues"]
     if cov or sun:
-        st.subheader("⚠ チェック結果")
+        st.subheader("⚠ チェック結果", anchor=False)
         for msg in cov: st.error(msg)
         for msg in sun: st.error(msg)
     else:
