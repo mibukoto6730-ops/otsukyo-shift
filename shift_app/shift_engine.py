@@ -284,6 +284,10 @@ def generate_shift(config: dict):
         else:
             targets[n] = shoteikoji
 
+    # ---- 時間調整（所定労働時間に近づける）----
+    if shoteikoji:
+        _adjust_hours(shift_data, shoteikoji)
+
     verif = _verify(shift_data, targets, yukyu_per_person, requested_off,
                     days_in_month, year, month, hols, is_sun_hol,
                     ph_assign, jm_assign, sun_hol_days)
@@ -295,6 +299,47 @@ def generate_shift(config: dict):
                          year, month, days_in_month, hols, is_sun_hol)
 
     return shift_data, excel, verif
+
+
+def _adjust_hours(shift_data, shoteikoji_val):
+    """正社員（B/C/D/H/I/J）の月間労働時間を所定労働時間に近づける。
+    過剰 → 終了時間を -1h（月内均等に分散）、黄色セルで表示。
+    不足 → 終了時間を +1h（月内均等に分散）、黄色セルで表示。"""
+    SHORTEN_END = {"19:00": "18:00", "18:00": "17:00"}
+    EXTEND_END  = {"17:00": "18:00", "18:00": "19:00"}
+
+    for person in ("B", "C", "D", "H", "I", "J"):
+        if not shift_data[person]:
+            continue
+        total = sum(v[2] for v in shift_data[person].values())
+        diff  = total - shoteikoji_val  # >0=過剰, <0=不足
+
+        if abs(diff) < 0.5:
+            continue
+
+        days = sorted(shift_data[person].keys())
+        over = diff > 0
+
+        if over:
+            cands = [d for d in days if shift_data[person][d][1] in SHORTEN_END]
+        else:
+            # 8:45-18:00 を 8:45-19:00 にするのは長すぎるため除外
+            cands = [d for d in days
+                     if shift_data[person][d][1] in EXTEND_END
+                     and not (shift_data[person][d][0] == "8:45"
+                              and shift_data[person][d][1] == "18:00")]
+
+        n = min(round(abs(diff)), len(cands))
+        if n == 0:
+            continue
+
+        step   = len(cands) / n
+        chosen = [cands[int(i * step)] for i in range(n)]
+
+        for d in chosen:
+            st, en, _, _ = shift_data[person][d]
+            new_en = SHORTEN_END[en] if over else EXTEND_END[en]
+            shift_data[person][d] = (st, new_en, net_hours(st, new_en), True)
 
 
 def _verify(shift_data, targets, yukyu, r_off, days_in_month, year, month,
