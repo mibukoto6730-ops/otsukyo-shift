@@ -273,6 +273,17 @@ def generate_shift(config: dict):
             elif wd == 4: shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
             elif wd == 5: shift_data["J"][d] = ("8:45",  "17:00", net_hours("8:45",  "17:00"), False)
 
+        # J カバー調整: H/I どちらかが不在で早晩どちらかが欠ける場合に J が補完
+        if not sh and wd in (0, 1, 3, 4) and d in shift_data["J"]:
+            h_st = shift_data["H"].get(d, (None,))[0]
+            i_st = shift_data["I"].get(d, (None,))[0]
+            has_early = h_st == "8:45" or i_st == "8:45"
+            has_late  = h_st == "10:00" or i_st == "10:00"
+            if has_early and not has_late:
+                shift_data["J"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
+            elif has_late and not has_early:
+                shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
+
     # ---- 目標時間 ----
     shoteikoji = SHOTEIKOJI.get(year, {}).get(month)
     targets = {}
