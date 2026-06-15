@@ -312,23 +312,25 @@ def generate_shift(config: dict):
 def parse_memo(memo: str, year: int, month: int) -> tuple[dict, list]:
     """
     その他メモを解析してシフト上書き辞書を返す。
-    形式（1行1件）: <スタッフ> <日> <開始>-<終了>
-    例) A 8 9:00-18:00 / J 15 10:00-19:00
+    形式（1行1件）: <スタッフ> <日[日]> <開始>-<終了> [任意テキスト]
+    全角・半角スペース、末尾の「希望」等は無視して解析。
+    例) A　11日　9:00-13:00　希望
     """
     import re
+    SP = r"[\s　]+"  # 半角・全角スペース両対応
     overrides: dict = {}
     parsed:    list = []
 
     for raw in memo.splitlines():
-        line = raw.strip()
+        line = raw.strip().strip("　")
         if not line:
             continue
-        m = re.fullmatch(
-            r"([A-Ka-k])\s+(\d{1,2})\s+(\d{1,2}:\d{2})-(\d{1,2}:\d{2})",
+        m = re.match(
+            rf"([A-Ka-k]){SP}(\d{{1,2}})日?{SP}(\d{{1,2}}:\d{{2}})-(\d{{1,2}}:\d{{2}})",
             line,
         )
         if not m:
-            parsed.append(f"解析できない行: 「{line}」（形式: A 8 9:00-18:00）")
+            parsed.append(f"解析できない行: 「{line}」（例: A　11日　9:00-13:00　希望）")
             continue
         name = m.group(1).upper()
         day  = int(m.group(2))
