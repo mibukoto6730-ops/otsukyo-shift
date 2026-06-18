@@ -365,17 +365,6 @@ for d in range(1, DAYS_IN_MONTH+1):
         elif wd == 4: shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
         elif wd == 5: shift_data["J"][d] = ("8:45","17:00",  net_hours("8:45","17:00"),  False)
 
-    # J カバー調整: H/I どちらかが不在で早晩どちらかが欠ける場合に J が補完
-    if not sh and wd in (0, 1, 3, 4) and d in shift_data["J"]:
-        h_st = shift_data["H"].get(d, (None,))[0]
-        i_st = shift_data["I"].get(d, (None,))[0]
-        has_early = h_st == "8:45" or i_st == "8:45"
-        has_late  = h_st == "10:00" or i_st == "10:00"
-        if has_early and not has_late:
-            shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
-        elif has_late and not has_early:
-            shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
-
     # K: 空欄（手動記入）
 
 # E/F/G/K: 実シフト時間から自動計算
@@ -503,6 +492,26 @@ def _adjust_hours(shift_data, shoteikoji_val):
 
 if _shoteikoji:
     _adjust_hours(shift_data, _shoteikoji)
+
+# J カバー調整（_adjust_hours 適用後・H/I の最終スケジュールを反映）
+def _is_early_start(s):
+    if not s: return False
+    h, m = map(int, s.split(":")); return h * 60 + m < 600
+
+for d in range(1, DAYS_IN_MONTH + 1):
+    if is_sun_hol(d): continue
+    _wd = datetime.date(YEAR, MONTH, d).weekday()
+    if _wd not in (0, 1, 3, 4): continue
+    if d not in shift_data["J"]: continue
+    _h_st = shift_data["H"].get(d, (None,))[0]
+    _i_st = shift_data["I"].get(d, (None,))[0]
+    _has_early = _is_early_start(_h_st) or _is_early_start(_i_st)
+    _has_late  = (_h_st is not None and not _is_early_start(_h_st)) or \
+                 (_i_st is not None and not _is_early_start(_i_st))
+    if _has_early and not _has_late:
+        shift_data["J"][d] = ("10:00","19:00", net_hours("10:00","19:00"), False)
+    elif _has_late and not _has_early:
+        shift_data["J"][d] = ("8:45","18:00",  net_hours("8:45","18:00"),  False)
 
 # ================================================================
 # 色・スタイル

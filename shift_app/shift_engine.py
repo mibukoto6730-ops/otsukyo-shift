@@ -273,16 +273,6 @@ def generate_shift(config: dict):
             elif wd == 4: shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
             elif wd == 5: shift_data["J"][d] = ("8:45",  "17:00", net_hours("8:45",  "17:00"), False)
 
-        # J カバー調整: H/I どちらかが不在で早晩どちらかが欠ける場合に J が補完
-        if not sh and wd in (0, 1, 3, 4) and d in shift_data["J"]:
-            h_st = shift_data["H"].get(d, (None,))[0]
-            i_st = shift_data["I"].get(d, (None,))[0]
-            has_early = h_st == "8:45" or i_st == "8:45"
-            has_late  = h_st == "10:00" or i_st == "10:00"
-            if has_early and not has_late:
-                shift_data["J"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
-            elif has_late and not has_early:
-                shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
 
     # ---- 目標時間 ----
     shoteikoji = SHOTEIKOJI.get(year, {}).get(month)
@@ -302,9 +292,36 @@ def generate_shift(config: dict):
     # ---- その他メモによる上書き ----
     memo = config.get("memo", "")
     memo_overrides, memo_parsed = parse_memo(memo, year, month)
+    memo_j_days: set = set()  # メモで明示的に設定された J の日（J カバー調整をスキップ）
     for name, day_map in memo_overrides.items():
         for day, shift in day_map.items():
-            shift_data[name][day] = shift
+            if shift is None:
+                shift_data[name].pop(day, None)  # 「休み」→ シフト削除
+            else:
+                shift_data[name][day] = shift
+            if name == "J":
+                memo_j_days.add(day)
+
+    # ---- J カバー調整（メモ適用後・H/I の最終スケジュールを反映）----
+    def _is_early(s):
+        if not s: return False
+        h, m = map(int, s.split(":")); return h * 60 + m < 600  # < 10:00
+
+    for d in range(1, days_in_month + 1):
+        if is_sun_hol(d): continue
+        wd_j = datetime.date(year, month, d).weekday()
+        if wd_j not in (0, 1, 3, 4): continue
+        if d not in shift_data["J"]: continue
+        if d in memo_j_days: continue  # メモで明示指定 → スキップ
+        h_st = shift_data["H"].get(d, (None,))[0]
+        i_st = shift_data["I"].get(d, (None,))[0]
+        has_early = _is_early(h_st) or _is_early(i_st)
+        has_late  = (h_st is not None and not _is_early(h_st)) or \
+                    (i_st is not None and not _is_early(i_st))
+        if has_early and not has_late:
+            shift_data["J"][d] = ("10:00", "19:00", net_hours("10:00", "19:00"), False)
+        elif has_late and not has_early:
+            shift_data["J"][d] = ("8:45",  "18:00", net_hours("8:45",  "18:00"), False)
 
     verif = _verify(shift_data, targets, yukyu_per_person, requested_off,
                     days_in_month, year, month, hols, is_sun_hol,
@@ -332,24 +349,41 @@ def parse_memo(memo: str, year: int, month: int) -> tuple[dict, list]:
     overrides: dict = {}
     parsed:    list = []
 
+    days_in_month = calendar.monthrange(year, month)[1]
+
     for raw in memo.splitlines():
         line = raw.strip().strip("　")
         if not line:
             continue
+
+        # パターン1: 休み（例: H 6日 休み）
+        m_off = re.match(
+            rf"([A-Ka-k]){SP}(\d{{1,2}})日?(?:{SP}(休み?|オフ|OFF|off))?$",
+            line,
+        )
+        if m_off and m_off.group(3):
+            name = m_off.group(1).upper()
+            day  = int(m_off.group(2))
+            if name not in PERSONS or not (1 <= day <= days_in_month):
+                parsed.append(f"無効な値: 「{line}」"); continue
+            overrides.setdefault(name, {})[day] = None  # None = シフト削除
+            parsed.append(f"{name} {day}日 休み（シフト削除）")
+            continue
+
+        # パターン2: 時間指定（例: A 11日 9:00-13:00 希望）
         m = re.match(
             rf"([A-Ka-k]){SP}(\d{{1,2}})日?{SP}(\d{{1,2}}:\d{{2}})-(\d{{1,2}}:\d{{2}})",
             line,
         )
         if not m:
-            parsed.append(f"解析できない行: 「{line}」（例: A　11日　9:00-13:00　希望）")
+            parsed.append(f"解析できない行: 「{line}」（例: A　11日　9:00-13:00　希望　または　H　6日　休み）")
             continue
         name = m.group(1).upper()
         day  = int(m.group(2))
         st   = m.group(3)
         en   = m.group(4)
         try:
-            days_in_month = calendar.monthrange(year, month)[1]
-            assert 1 <= day <= days_in_month
+            assert name in PERSONS and 1 <= day <= days_in_month
             nh = net_hours(st, en)
             assert nh > 0
         except Exception:
